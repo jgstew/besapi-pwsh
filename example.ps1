@@ -12,5 +12,5 @@ $bes = Get-BESConnection -Username "User" -Password "Password" -RootServer "BigF
 # Perform operations
 Write-Host $bes.Get("help", @{})
 Write-Host $bes.Get("sites", @{})
-Write-Host $bes.Upload("./LICENSE", @{})
+Write-Host $bes.Upload("./LICENSE.txt", @{})
 Write-Host $bes.SessionRelevanceXML("number of bes computers", @{})
