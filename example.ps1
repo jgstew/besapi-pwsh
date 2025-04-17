@@ -1,19 +1,16 @@
 # Import the besapi module
 try {
-    $modulePath = Resolve-Path "./besapi.psm1"
-    Import-Module -Name $modulePath
+    $modulePath = Resolve-Path "./besapi.psm1" 
+    Import-Module -Name $modulePath -Force
 } catch {
     Write-Host "An error occurred:" -ForegroundColor Red
     Write-Host $_.Exception.Message -ForegroundColor Yellow
 }
 # Create a connection
-$bes = New-BESConnection -Username "admin" -Password "password" -RootServer "10.0.7.70"
+$bes = Get-BESConnection -Username "User" -Password "Password" -RootServer "BigFix"
 
 # Perform operations
-$result = $bes.Get("sites")
-$sites = $result.BesXml
-
-Write-Host $sites
-
-# Export site contents
-$bes.ExportSiteContents("custom/Demo")
+Write-Host $bes.Get("help", @{})
+Write-Host $bes.Get("sites", @{})
+Write-Host $bes.Upload("./LICENSE", @{})
+Write-Host $bes.SessionRelevanceXML("number of bes computers", @{})

@@ -122,28 +122,28 @@ class BESConnection {
     BESConnection([string]$Username, [string]$Password, [string]$RootServer, [bool]$Verify = $false) {
         $this.Username = $Username
         $this.Verify = $Verify
-        
+
         # Create a secure credential
         $securePassword = ConvertTo-SecureString $Password -AsPlainText -Force
         $this.Credential = New-Object System.Management.Automation.PSCredential($Username, $securePassword)
-        
+
         # Set up session
         $this.Session = New-Object Microsoft.PowerShell.Commands.WebRequestSession
-        
-        # If not provided, add on https://
-        if (-not $RootServer.StartsWith("http")) {
-            $RootServer = "https://" + $RootServer
+
+        # Modify RootServer and assign to $this.RootServer
+        $modifiedRootServer = $RootServer
+        if (-not $modifiedRootServer.StartsWith("http")) {
+            $modifiedRootServer = "https://" + $modifiedRootServer
         }
-        # If port not provided, add on the default :52311
-        if (($RootServer.ToCharArray() | Where-Object { $_ -eq ':' } | Measure-Object).Count -ne 2) {
-            $RootServer = $RootServer + ":52311"
+        if (($modifiedRootServer.ToCharArray() | Where-Object { $_ -eq ':' } | Measure-Object).Count -ne 2) {
+            $modifiedRootServer = $modifiedRootServer + ":52311"
         }
-        
-        $this.RootServer = $RootServer
-        
+
+        $this.RootServer = $modifiedRootServer
+
         # No need to disable SSL warnings in modern PowerShell Core
         # PowerShell Core handles this with the -SkipCertificateCheck parameter
-        
+
         $this.Login()
     }
     
@@ -157,7 +157,7 @@ class BESConnection {
         }
     }
     
-    [RESTResult] Get([string]$Path = "help", [hashtable]$Params = @{}) {
+    [string] Get([string]$Path = "help", [hashtable]$Params = @{}) {
         $url = $this.Url($Path)
         
         $invokeParams = @{
@@ -176,10 +176,10 @@ class BESConnection {
         }
         
         $response = Invoke-WebRequest @invokeParams
-        return [RESTResult]::new($response)
+        return $response
     }
     
-    [RESTResult] Post([string]$Path, [string]$Data, [hashtable]$Params = @{}) {
+    [string] Post([string]$Path, [string]$Data, [hashtable]$Params = @{}) {
         $url = $this.Url($Path)
         
         $invokeParams = @{
@@ -199,10 +199,10 @@ class BESConnection {
         }
         
         $response = Invoke-WebRequest @invokeParams
-        return [RESTResult]::new($response)
+        return $response
     }
     
-    [RESTResult] Put([string]$Path, [string]$Data, [hashtable]$Params = @{}) {
+    [string] Put([string]$Path, [string]$Data, [hashtable]$Params = @{}) {
         $url = $this.Url($Path)
         
         $invokeParams = @{
@@ -222,10 +222,10 @@ class BESConnection {
         }
         
         $response = Invoke-WebRequest @invokeParams
-        return [RESTResult]::new($response)
+        return $response
     }
     
-    [RESTResult] Delete([string]$Path, [hashtable]$Params = @{}) {
+    [string] Delete([string]$Path, [hashtable]$Params = @{}) {
         $url = $this.Url($Path)
         
         $invokeParams = @{
@@ -244,10 +244,10 @@ class BESConnection {
         }
         
         $response = Invoke-WebRequest @invokeParams
-        return [RESTResult]::new($response)
+        return $response
     }
     
-    [RESTResult] SessionRelevanceXML([string]$Relevance, [hashtable]$Params = @{}) {
+    [string] SessionRelevanceXML([string]$Relevance, [hashtable]$Params = @{}) {
         # Use [System.Web.HttpUtility] if available, otherwise fall back to .NET method
         try {
             $encodedRelevance = [System.Web.HttpUtility]::UrlEncode($Relevance)
@@ -260,38 +260,6 @@ class BESConnection {
         $data = "relevance=$encodedRelevance"
         $response = $this.Post("query", $data, $Params)
         return $response
-    }
-    
-    [array] SessionRelevanceArray([string]$Relevance, [hashtable]$Params = @{}) {
-        $relResult = $this.SessionRelevanceXML($Relevance, $Params)
-        $result = @()
-        
-        try {
-            $xml = [xml]$relResult.Text
-            $answers = $xml.SelectNodes("//Answer")
-            
-            if ($null -ne $answers -and $answers.Count -gt 0) {
-                foreach ($item in $answers) {
-                    $result += $item.InnerText
-                }
-            }
-            else {
-                $error = $xml.SelectSingleNode("//Error")
-                if ($null -ne $error) {
-                    $result += "ERROR: " + $error.InnerText
-                }
-            }
-        }
-        catch {
-            Write-Error "Error processing relevance results: $_"
-        }
-        
-        return $result
-    }
-    
-    [string] SessionRelevanceString([string]$Relevance, [hashtable]$Params = @{}) {
-        $relResultArray = $this.SessionRelevanceArray($Relevance, $Params)
-        return $relResultArray -join "`n"
     }
     
     [bool] Connected() {
@@ -318,12 +286,12 @@ class BESConnection {
         return $this.Connected()
     }
     
-    [void] Logout() {
+    Logout() {
         # Clear cookies from session and close
         $this.Session.Cookies.Clear()
     }
     
-    [RESTResult] Upload([string]$FilePath, [string]$FileName) {
+    [string] Upload([string]$FilePath, [string]$FileName) {
         if (-not (Test-Path -Path $FilePath -PathType Leaf)) {
             throw "File not found or not readable: $FilePath"
         }
@@ -348,245 +316,24 @@ class BESConnection {
         # Convert bytes to proper format for PowerShell Core
         return $this.Post($this.Url("upload"), $fileBytes, $params)
     }
-    
-    [void] ExportSiteContents([string]$SitePath, [string]$ExportFolder = "./", [int]$NameTrim = 70, [bool]$Verbose = $false) {
-        if ($Verbose) {
-            Write-Host "export_site_contents()"
-        }
-        
-        # Iterate Over All Site Content
-        $content = $this.Get("site/$SitePath/content")
-        
-        if ($Verbose) {
-            Write-Host $content
-        }
-        
-        if ($content.Request.StatusCode -eq 200) {
-            $xml = [xml]$content.Text
-            $itemCount = $xml.SelectNodes("/BESAPI/SiteContent/*").Count
-            Write-Host "Archiving $itemCount items from $SitePath..."
-            
-            foreach ($item in $xml.SelectNodes("/BESAPI/SiteContent/*")) {
-                if ($Verbose) {
-                    Write-Host "{$SitePath} ($($item.LocalName)) [$($item.ID)] $($item.Name) - $($item.GetAttribute('LastModified'))"
-                }
-                
-                # Get Specific Content
-                $resourceUrl = $item.GetAttribute('Resource').Replace("http://", "https://")
-                $contentResponse = $this.Get($resourceUrl)
-                
-                # Write Content to Disk
-                if ($contentResponse) {
-                    $sanitizedSitePath = Sanitize-Text $SitePath
-                    $sanitizedTag = Sanitize-Text $item.LocalName
-                    $sanitizedID = Sanitize-Text $item.ID
-                    $sanitizedName = Sanitize-Text ($item.Name.Substring(0, [Math]::Min($item.Name.Length, $NameTrim)))
-                    
-                    $folderPath = Join-Path -Path $ExportFolder -ChildPath "$sanitizedSitePath/$sanitizedTag"
-                    
-                    if (-not (Test-Path -Path $folderPath)) {
-                        New-Item -Path $folderPath -ItemType Directory -Force | Out-Null
-                    }
-                    
-                    $filePath = Join-Path -Path $folderPath -ChildPath "$sanitizedID - $sanitizedName.bes"
-                    # Use UTF8NoBOM for PowerShell Core
-                    $contentResponse.Text | Out-File -FilePath $filePath -Encoding utf8NoBOM
-                }
-            }
-        }
-    }
-    
-    [void] ExportAllSites([bool]$IncludeExternal = $false, [string]$ExportFolder = "./", [int]$NameTrim = 70, [bool]$Verbose = $false) {
-        $resultsSites = $this.Get("sites")
-        
-        if ($Verbose) {
-            Write-Host $resultsSites
-        }
-        
-        if ($resultsSites.Request.StatusCode -eq 200) {
-            $xml = [xml]$resultsSites.Text
-            
-            foreach ($item in $xml.SelectNodes("/BESAPI/Sites/Site")) {
-                $resourcePath = $item.GetAttribute('Resource')
-                $sitePath = $resourcePath.Split('/api/site/', 2)[1]
-                
-                if ($IncludeExternal -or -not $sitePath.Contains("external/")) {
-                    Write-Host "Exporting Site: $sitePath"
-                    $this.ExportSiteContents($sitePath, $ExportFolder, $NameTrim, $Verbose)
-                }
-            }
-        }
-    }
 }
 
-class RESTResult {
-    <#
-    .SYNOPSIS
-    BigFix REST API Result Abstraction Class
-    #>
-    
-    [Microsoft.PowerShell.Commands.BasicHtmlWebResponseObject]$Request
-    [string]$Text
-    [xml]$_BesXml
-    [System.Xml.XmlDocument]$_BesObj
-    [hashtable]$_BesDict
-    [string]$_BesJson
-    [bool]$Valid
-    
-    # Constructor
-    RESTResult([Microsoft.PowerShell.Commands.BasicHtmlWebResponseObject]$Request) {
-        $this.Request = $Request
-        
-        # Properly handle content based on type (string or byte array)
-        if ($Request.Content -is [byte[]]) {
-            $this.Text = [System.Text.Encoding]::UTF8.GetString($Request.Content)
-        }
-        else {
-            $this.Text = $Request.Content
-        }
-        
-        # Check if response is valid XML
-        if ($Request.Headers.ContainsKey("Content-Type") -and $Request.Headers["Content-Type"] -like "*application/xml*") {
-            $this.Valid = $true
-        }
-        else {
-            try {
-                $xml = [xml]$this.Text
-                $this.Valid = $true
-            }
-            catch {
-                $this.Valid = $false
-            }
-        }
-    }
-    
-    # Methods
-    [string] ToString() {
-        if ($this.Valid) {
-            return $this.BesXml.OuterXml
-        }
-        else {
-            return $this.Text
-        }
-    }
-    
-    [xml] GetBesXml() {
-        if ($this.Valid -and $null -eq $this._BesXml) {
-            try {
-                $this._BesXml = [xml]$this.Text
-            }
-            catch {
-                Write-Error "Failed to parse XML: $_"
-            }
-        }
-        
-        return $this._BesXml
-    }
-    
-    [System.Xml.XmlDocument] GetBesObj() {
-        if ($this.Valid -and $null -eq $this._BesObj) {
-            try {
-                $this._BesObj = [xml]$this.Text
-            }
-            catch {
-                Write-Error "Failed to create XML object: $_"
-            }
-        }
-        
-        return $this._BesObj
-    }
-    
-    [hashtable] GetBesDict() {
-        if ($null -eq $this._BesDict) {
-            if ($this.Valid) {
-                try {
-                    $xml = $this.GetBesXml()
-                    if ($null -ne $xml) {
-                        $this._BesDict = Convert-XmlElementToHashtable -Node $xml
-                    }
-                    else {
-                        $this._BesDict = @{ "text" = $this.ToString() }
-                    }
-                }
-                catch {
-                    $this._BesDict = @{ "text" = $this.ToString() }
-                }
-            }
-            else {
-                $this._BesDict = @{ "text" = $this.ToString() }
-            }
-        }
-        
-        return $this._BesDict
-    }
-    
-    [string] GetBesJson() {
-        if ($null -eq $this._BesJson) {
-            $this._BesJson = $this.GetBesDict() | ConvertTo-Json -Depth 10
-        }
-        
-        return $this._BesJson
-    }
-    
-    # Properties
-    [xml] BesXml { 
-        get { return $this.GetBesXml() }
-    }
-    
-    [System.Xml.XmlDocument] BesObj {
-        get { return $this.GetBesObj() }
-    }
-    
-    [hashtable] BesDict {
-        get { return $this.GetBesDict() }
-    }
-    
-    [string] BesJson {
-        get { return $this.GetBesJson() }
-    }
-}
-
-# Export functions and classes for module
-Export-ModuleMember -Function Sanitize-Text, Convert-XmlElementToHashtable
-
-<#
-.SYNOPSIS
-Creates a new BigFix REST API connection.
-
-.DESCRIPTION
-Creates and returns a new BESConnection object for interacting with the BigFix REST API.
-
-.PARAMETER Username
-The username for authentication.
-
-.PARAMETER Password
-The password for authentication.
-
-.PARAMETER RootServer
-The BigFix root server address.
-
-.PARAMETER Verify
-Whether to verify SSL certificates.
-
-.EXAMPLE
-$bes = New-BESConnection -Username "admin" -Password "password" -RootServer "bigfix.example.com"
-#>
-function New-BESConnection {
+function Get-BESConnection {
     param (
         [Parameter(Mandatory = $true)]
         [string]$Username,
-        
+
         [Parameter(Mandatory = $true)]
         [string]$Password,
-        
+
         [Parameter(Mandatory = $true)]
         [string]$RootServer,
-        
+
         [Parameter(Mandatory = $false)]
         [bool]$Verify = $false
     )
-    
+
     return [BESConnection]::new($Username, $Password, $RootServer, $Verify)
 }
 
-Export-ModuleMember -Function New-BESConnection
+Export-ModuleMember -Function Sanitize-Text, Convert-XmlElementToHashtable, Get-BESConnection, BESConnection
