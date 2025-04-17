@@ -4,8 +4,7 @@
 # PowerShell module for communicating with the BES (BigFix) REST API
 # This module provides functions and classes to interact with the BigFix REST API,
 # including methods for authentication, sending requests, and handling responses.
-# Requires -Version 5.1
-
+# Requires -Version 7.5
 
 # Import required modules
 using namespace System.Net
@@ -117,15 +116,19 @@ class BESConnection {
     [string]$RootServer
     [bool]$Verify
     [Microsoft.PowerShell.Commands.WebRequestSession]$Session
+    [PSCredential]$Credential
     
     # Constructor
     BESConnection([string]$Username, [string]$Password, [string]$RootServer, [bool]$Verify = $false) {
         $this.Username = $Username
         $this.Verify = $Verify
         
+        # Create a secure credential
+        $securePassword = ConvertTo-SecureString $Password -AsPlainText -Force
+        $this.Credential = New-Object System.Management.Automation.PSCredential($Username, $securePassword)
+        
         # Set up session
         $this.Session = New-Object Microsoft.PowerShell.Commands.WebRequestSession
-        $this.Session.Credentials = New-Object System.Net.NetworkCredential($Username, $Password)
         
         # If not provided, add on https://
         if (-not $RootServer.StartsWith("http")) {
@@ -138,23 +141,8 @@ class BESConnection {
         
         $this.RootServer = $RootServer
         
-        # Disable SSL warnings if verify is false
-        if (-not $Verify) {
-            if (-not ("TrustAllCertsPolicy" -as [type])) {
-                Add-Type @"
-                    using System.Net;
-                    using System.Security.Cryptography.X509Certificates;
-                    public class TrustAllCertsPolicy : ICertificatePolicy {
-                        public bool CheckValidationResult(
-                            ServicePoint srvPoint, X509Certificate certificate,
-                            WebRequest request, int certificateProblem) {
-                            return true;
-                        }
-                    }
-"@
-                [System.Net.ServicePointManager]::CertificatePolicy = New-Object TrustAllCertsPolicy
-            }
-        }
+        # No need to disable SSL warnings in modern PowerShell Core
+        # PowerShell Core handles this with the -SkipCertificateCheck parameter
         
         $this.Login()
     }
@@ -171,30 +159,104 @@ class BESConnection {
     
     [RESTResult] Get([string]$Path = "help", [hashtable]$Params = @{}) {
         $url = $this.Url($Path)
-        $response = Invoke-WebRequest -Uri $url -WebSession $this.Session -Method Get -UseBasicParsing -SkipCertificateCheck:(-not $this.Verify) @Params
+        
+        $invokeParams = @{
+            Uri = $url
+            WebSession = $this.Session
+            Method = 'Get'
+            UseBasicParsing = $true
+            Credential = $this.Credential
+            Authentication = 'Basic'
+            SkipCertificateCheck = (-not $this.Verify)
+        }
+        
+        # Add any additional parameters
+        foreach ($key in $Params.Keys) {
+            $invokeParams[$key] = $Params[$key]
+        }
+        
+        $response = Invoke-WebRequest @invokeParams
         return [RESTResult]::new($response)
     }
     
     [RESTResult] Post([string]$Path, [string]$Data, [hashtable]$Params = @{}) {
         $url = $this.Url($Path)
-        $response = Invoke-WebRequest -Uri $url -WebSession $this.Session -Method Post -Body $Data -UseBasicParsing -SkipCertificateCheck:(-not $this.Verify) @Params
+        
+        $invokeParams = @{
+            Uri = $url
+            WebSession = $this.Session
+            Method = 'Post'
+            Body = $Data
+            UseBasicParsing = $true
+            Credential = $this.Credential
+            Authentication = 'Basic'
+            SkipCertificateCheck = (-not $this.Verify)
+        }
+        
+        # Add any additional parameters
+        foreach ($key in $Params.Keys) {
+            $invokeParams[$key] = $Params[$key]
+        }
+        
+        $response = Invoke-WebRequest @invokeParams
         return [RESTResult]::new($response)
     }
     
     [RESTResult] Put([string]$Path, [string]$Data, [hashtable]$Params = @{}) {
         $url = $this.Url($Path)
-        $response = Invoke-WebRequest -Uri $url -WebSession $this.Session -Method Put -Body $Data -UseBasicParsing -SkipCertificateCheck:(-not $this.Verify) @Params
+        
+        $invokeParams = @{
+            Uri = $url
+            WebSession = $this.Session
+            Method = 'Put'
+            Body = $Data
+            UseBasicParsing = $true
+            Credential = $this.Credential
+            Authentication = 'Basic'
+            SkipCertificateCheck = (-not $this.Verify)
+        }
+        
+        # Add any additional parameters
+        foreach ($key in $Params.Keys) {
+            $invokeParams[$key] = $Params[$key]
+        }
+        
+        $response = Invoke-WebRequest @invokeParams
         return [RESTResult]::new($response)
     }
     
     [RESTResult] Delete([string]$Path, [hashtable]$Params = @{}) {
         $url = $this.Url($Path)
-        $response = Invoke-WebRequest -Uri $url -WebSession $this.Session -Method Delete -UseBasicParsing -SkipCertificateCheck:(-not $this.Verify) @Params
+        
+        $invokeParams = @{
+            Uri = $url
+            WebSession = $this.Session
+            Method = 'Delete'
+            UseBasicParsing = $true
+            Credential = $this.Credential
+            Authentication = 'Basic'
+            SkipCertificateCheck = (-not $this.Verify)
+        }
+        
+        # Add any additional parameters
+        foreach ($key in $Params.Keys) {
+            $invokeParams[$key] = $Params[$key]
+        }
+        
+        $response = Invoke-WebRequest @invokeParams
         return [RESTResult]::new($response)
     }
     
     [RESTResult] SessionRelevanceXML([string]$Relevance, [hashtable]$Params = @{}) {
-        $encodedRelevance = [System.Web.HttpUtility]::UrlEncode($Relevance)
+        # Use [System.Web.HttpUtility] if available, otherwise fall back to .NET method
+        try {
+            $encodedRelevance = [System.Web.HttpUtility]::UrlEncode($Relevance)
+        }
+        catch {
+            # Use URI escape method as fallback
+            $encodedRelevance = [uri]::EscapeDataString($Relevance)
+        }
+        
         $data = "relevance=$encodedRelevance"
         $response = $this.Post("query", $data, $Params)
         return $response
@@ -208,14 +270,14 @@ class BESConnection {
             $xml = [xml]$relResult.Text
             $answers = $xml.SelectNodes("//Answer")
             
-            if ($answers -ne $null -and $answers.Count -gt 0) {
+            if ($null -ne $answers -and $answers.Count -gt 0) {
                 foreach ($item in $answers) {
                     $result += $item.InnerText
                 }
             }
             else {
                 $error = $xml.SelectSingleNode("//Error")
-                if ($error -ne $null) {
+                if ($null -ne $error) {
                     $result += "ERROR: " + $error.InnerText
                 }
             }
@@ -275,12 +337,16 @@ class BESConnection {
             "Content-Disposition" = "attachment; filename=`"$FileName`""
         }
         
-        $fileContent = Get-Content -Path $FilePath -Raw
+        # Use byte array instead of raw content for binary-safe uploads
+        $fileBytes = [System.IO.File]::ReadAllBytes($FilePath)
+        
         $params = @{
             Headers = $headers
+            ContentType = "application/octet-stream"
         }
         
-        return $this.Post($this.Url("upload"), $fileContent, $params)
+        # Convert bytes to proper format for PowerShell Core
+        return $this.Post($this.Url("upload"), $fileBytes, $params)
     }
     
     [void] ExportSiteContents([string]$SitePath, [string]$ExportFolder = "./", [int]$NameTrim = 70, [bool]$Verbose = $false) {
@@ -323,7 +389,8 @@ class BESConnection {
                     }
                     
                     $filePath = Join-Path -Path $folderPath -ChildPath "$sanitizedID - $sanitizedName.bes"
-                    $contentResponse.Text | Out-File -FilePath $filePath -Encoding utf8
+                    # Use UTF8NoBOM for PowerShell Core
+                    $contentResponse.Text | Out-File -FilePath $filePath -Encoding utf8NoBOM
                 }
             }
         }
@@ -358,7 +425,7 @@ class RESTResult {
     BigFix REST API Result Abstraction Class
     #>
     
-    [Microsoft.PowerShell.Commands.WebResponseObject]$Request
+    [Microsoft.PowerShell.Commands.BasicHtmlWebResponseObject]$Request
     [string]$Text
     [xml]$_BesXml
     [System.Xml.XmlDocument]$_BesObj
@@ -367,12 +434,19 @@ class RESTResult {
     [bool]$Valid
     
     # Constructor
-    RESTResult([Microsoft.PowerShell.Commands.WebResponseObject]$Request) {
+    RESTResult([Microsoft.PowerShell.Commands.BasicHtmlWebResponseObject]$Request) {
         $this.Request = $Request
-        $this.Text = $Request.Content
+        
+        # Properly handle content based on type (string or byte array)
+        if ($Request.Content -is [byte[]]) {
+            $this.Text = [System.Text.Encoding]::UTF8.GetString($Request.Content)
+        }
+        else {
+            $this.Text = $Request.Content
+        }
         
         # Check if response is valid XML
-        if ($Request.Headers.ContainsKey("Content-Type") -and $Request.Headers["Content-Type"] -eq "application/xml") {
+        if ($Request.Headers.ContainsKey("Content-Type") -and $Request.Headers["Content-Type"] -like "*application/xml*") {
             $this.Valid = $true
         }
         else {
@@ -426,7 +500,13 @@ class RESTResult {
         if ($null -eq $this._BesDict) {
             if ($this.Valid) {
                 try {
-                    $this._BesDict = Convert-XmlElementToHashtable -Node $this.GetBesXml()
+                    $xml = $this.GetBesXml()
+                    if ($null -ne $xml) {
+                        $this._BesDict = Convert-XmlElementToHashtable -Node $xml
+                    }
+                    else {
+                        $this._BesDict = @{ "text" = $this.ToString() }
+                    }
                 }
                 catch {
                     $this._BesDict = @{ "text" = $this.ToString() }
@@ -449,28 +529,25 @@ class RESTResult {
     }
     
     # Properties
-    [xml] BesXml() { 
+    [xml] BesXml { 
         get { return $this.GetBesXml() }
     }
     
-    [System.Xml.XmlDocument] BesObj() {
+    [System.Xml.XmlDocument] BesObj {
         get { return $this.GetBesObj() }
     }
     
-    [hashtable] BesDict() {
+    [hashtable] BesDict {
         get { return $this.GetBesDict() }
     }
     
-    [string] BesJson() {
+    [string] BesJson {
         get { return $this.GetBesJson() }
     }
 }
 
 # Export functions and classes for module
 Export-ModuleMember -Function Sanitize-Text, Convert-XmlElementToHashtable
-# Make the classes available
-Update-TypeData -TypeName BESConnection -DefaultDisplayPropertySet Username, RootServer, Verify -Force
-Update-TypeData -TypeName RESTResult -DefaultDisplayPropertySet Valid, Request -Force
 
 <#
 .SYNOPSIS
