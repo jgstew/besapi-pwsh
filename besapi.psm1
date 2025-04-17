@@ -15,96 +15,6 @@ using namespace System.Collections.Generic
 using namespace System.IO
 using namespace System.Web
 
-function Sanitize-Text {
-    <#
-    .SYNOPSIS
-    Clean arbitrary text for safe file system usage.
-    
-    .DESCRIPTION
-    Sanitizes strings to make them safe for file system operations.
-    
-    .PARAMETER Values
-    One or more strings to sanitize.
-    
-    .EXAMPLE
-    Sanitize-Text "file/name"
-    #>
-    param (
-        [Parameter(Mandatory = $true, ValueFromPipeline = $true)]
-        [string[]]$Values
-    )
-    
-    begin {
-        $validChars = '-_.() ' + [char[]][char]'A'..[char]'Z' + [char[]][char]'a'..[char]'z' + [char[]][char]'0'..[char]'9'
-        $sanitizedValues = @()
-    }
-    
-    process {
-        foreach ($value in $Values) {
-            $sanitized = $value.Replace("/", "-").Replace("\", "-")
-            $result = ""
-            foreach ($char in $sanitized.ToCharArray()) {
-                if ($validChars -contains $char) {
-                    $result += $char
-                }
-            }
-            $sanitizedValues += $result
-        }
-    }
-    
-    end {
-        return $sanitizedValues
-    }
-}
-
-function Convert-XmlElementToHashtable {
-    <#
-    .SYNOPSIS
-    Convert an XML element to a PowerShell hashtable.
-    
-    .DESCRIPTION
-    Recursively converts XML elements to nested hashtables.
-    
-    .PARAMETER Node
-    The XML node to convert.
-    #>
-    param (
-        [Parameter(Mandatory = $true)]
-        [System.Xml.XmlNode]$Node
-    )
-    
-    $result = @{}
-    
-    foreach ($element in $Node.ChildNodes) {
-        if ($element.NodeType -eq [System.Xml.XmlNodeType]::Element) {
-            # Remove namespace prefix if present
-            $key = $element.LocalName
-            
-            # Process element as text if it contains non-whitespace content
-            if ($element.HasChildNodes -and $element.ChildNodes.Count -eq 1 -and $element.ChildNodes[0].NodeType -eq [System.Xml.XmlNodeType]::Text) {
-                $value = $element.InnerText
-            }
-            else {
-                $value = Convert-XmlElementToHashtable -Node $element
-            }
-            
-            if ($result.ContainsKey($key)) {
-                if ($result[$key] -is [array]) {
-                    $result[$key] += $value
-                }
-                else {
-                    $tempValue = $result[$key]
-                    $result[$key] = @($tempValue, $value)
-                }
-            }
-            else {
-                $result[$key] = $value
-            }
-        }
-    }
-    
-    return $result
-}
 
 class BESConnection {
     <#
@@ -336,4 +246,4 @@ function Get-BESConnection {
     return [BESConnection]::new($Username, $Password, $RootServer, $Verify)
 }
 
-Export-ModuleMember -Function Sanitize-Text, Convert-XmlElementToHashtable, Get-BESConnection, BESConnection
+Export-ModuleMember Get-BESConnection, BESConnection
