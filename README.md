@@ -18,5 +18,11 @@ see `example.ps1` for example usage
 A fully featured Python Module for interacting with the BigFix REST API:
 - https://github.com/jgstew/besapi
 
+PowerShell examples that do not use this module:
+- https://github.com/jgstew/tools/blob/master/powershell/BigFix_REST_LoginExample.ps1
+- https://github.com/jgstew/tools/blob/master/powershell/BigFix_REST_SessionRelevance.ps1
+- https://github.com/jgstew/tools/blob/master/powershell/BigFix_REST_SessionRelevance_POST.ps1
+- https://github.com/jgstew/tools/blob/master/powershell/BigFix_REST_SessionRelevance_Simple.ps1
+
 A (windows only?) PowerShell module for interacting with BigFix WebReports SOAP API:
 - https://github.com/promptussoftware/bigfix-powershell
