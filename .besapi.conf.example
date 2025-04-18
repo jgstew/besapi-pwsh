@@ -1,0 +1,4 @@
+[besapi]
+bes_user_name = UserName
+bes_root_server = IP_OR_FQDN
+bes_password = Password

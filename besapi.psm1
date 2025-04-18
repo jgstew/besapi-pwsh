@@ -246,4 +246,58 @@ function Get-BESConnection {
     return [BESConnection]::new($Username, $Password, $RootServer, $Verify)
 }
 
-Export-ModuleMember Get-BESConnection, BESConnection
+function Get-BESApiConfig {
+    param (
+        [string]$FilePath = "~/.besapi.conf"
+    )
+
+    $FilePath = Resolve-Path $FilePath
+
+    # Check if the file exists
+    if (-Not (Test-Path -Path $FilePath)) {
+        throw "Configuration file not found at path: $FilePath"
+    }
+
+    # Read the file content
+    $configContent = Get-Content -Path $FilePath
+
+    # Initialize a hashtable to store the configuration
+    $config = @{}
+
+    # Parse the file line by line
+    foreach ($line in $configContent) {
+        # Skip comments and empty lines
+        if ($line -match "^\s*#" -or $line -match "^\s*$") {
+            continue
+        }
+
+        # Match key-value pairs
+        if ($line -match "^\s*(\w+)\s*=\s*(.+)\s*$") {
+            $key = $matches[1]
+            $value = $matches[2]
+            $config[$key] = $value
+        }
+    }
+
+    # Return the configuration as a hashtable
+    return $config
+}
+
+function Get-BESConnectionFromConfig {
+    param (
+        [string]$FilePath = "~/.besapi.conf"
+    )
+
+    $config = Get-BESApiConfig -FilePath $FilePath
+
+    if (-not $config.ContainsKey("bes_user_name") -or
+        -not $config.ContainsKey("bes_password") -or
+        -not $config.ContainsKey("bes_root_server")) {
+        throw "Configuration file must contain 'bes_user_name', 'bes_password', and 'bes_root_server' keys."
+    }
+    return Get-BESConnection -Username $config["bes_user_name"] `
+                             -Password $config["bes_password"] `
+                             -RootServer $config["bes_root_server"]
+}
+
+Export-ModuleMember Get-BESConnection, BESConnection, Get-BESApiConfig, Get-BESConnectionFromConfig
